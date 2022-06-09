@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
 import json
+import datetime
 import plotly.graph_objects as go
 from nba_api.stats.endpoints import shotchartdetail
+from nba_api.stats.static import players
 
 # response = shotchartdetail.ShotChartDetail(
 #     team_id = 0, 
@@ -219,7 +221,7 @@ fig.add_trace(go.Scatter(
     customdata=made_df[custom_columns],
     marker=dict(
         size=10,
-        color='blue',
+        color='green',
         symbol='circle-open'
         ),
     hovertemplate='<br>'.join([
@@ -256,9 +258,12 @@ home_team = made_df['HTM'].values[0]
 away_team = made_df['VTM'].values[0]
 game_date = made_df['GAME_DATE'].values[0]
 
+#format game date
+new_game_date = datetime.datetime.strptime(str(game_date), "%Y%m%d").strftime("%d/%m/%Y")
+
 fig.update_layout(
     title_text=f'''
-        {player_name} FGA - {home_team} vs {away_team} - on {game_date} - @{home_team} - Playoffs
+        {player_name} FGA | {home_team} vs {away_team} | {new_game_date} | @{home_team} | Playoffs
         ''',
     title_x=0.5,
     title_y=0.97
@@ -267,9 +272,12 @@ fig.update_layout(
 fig.show(config=dict(displayModeBar=False))
 
 #TODO:
-# - hovertext with customdata
-# - title formatted with correct values
-# - total fgm/fga annotated on plot
+# - title formatted with correct values* May not be complete
+# - total fgm/fga annotated on plot: len(made_df.index)/len(made)+len(missed)) or manipulate original shots_df 
+#   - Quarterly shot breakdown? 
+# - Maybe player picture?
+# - Rewrite fetch_player_id to use static endpoint: .static players
+
 
 # fig.update_layout(yaxis_range=[4, -4]) inverting y-range (mirrors plot horizontally so right side of hoop is right side of viewer)
 
