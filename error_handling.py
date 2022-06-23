@@ -75,7 +75,8 @@ def check_game_date(player_id, season, season_type):
 
         shots_dfs = scf.fetch_shots(player_id, season, season_type, game_date)
 
-        #Returns empty df if game_date is invalid
+        #Returns empty df if game_date is invalid 
+        #CAN ALSO BE EMPTY IF THE PLAYER PLAYED GARBAGE MINUTES AND DIDN'T SCORE ANY POINTS
         if shots_dfs[0].empty == True:
             print("Invalid date, please ensure it is in the form of YYYYMMDD (see e.g)\n")
             continue
