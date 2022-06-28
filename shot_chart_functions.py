@@ -1,4 +1,4 @@
-from nba_api.stats.endpoints import commonallplayers
+from nba_api.stats.static import players
 from nba_api.stats.endpoints import shotchartdetail
 from nba_api.stats.endpoints import playergamelog
 import datetime
@@ -11,30 +11,13 @@ season_types = ('Playoffs', 'Regular Season')
 
 #Fetch player ID from player full name
 def fetch_player_id(player_name):
-    response = commonallplayers.CommonAllPlayers()
-    data = json.loads(response.get_json())
+    players_dict = players.get_players()
+    player_data = [player for player in players_dict if player['full_name'].lower() == player_name.lower()][0]
 
-    #Define rows and columns before (readability)
-    players = data['resultSets'][0]
-
-    players_df = pd.DataFrame(players['rowSet'], columns=players['headers'])
-
-    # player_df = players_df[players_df.DISPLAY_FIRST_LAST==player_name]
-    # return player_df['PERSON_ID'].values[0]
-
-    # player_id = players_df[players_df['DISPLAY_FIRST_LAST']==player_name]
-    # return player_id['PERSON_ID'].values[0]
-
-    player_series = players_df.loc[players_df['DISPLAY_FIRST_LAST']==player_name, 'PERSON_ID']
-
-    return player_series.iloc[0]
-
-# print(fetch_player_id('James Harden'))
-# print(type(fetch_player_id('James Harden')))
+    return player_data['id']
 
 #Return df for all games (PO/RS) for specific season
 #Date format is in MMDDYYYY - Might not need to return games_df
-#Could just print the df to user and fiddle around with date conversion
 #NBA only started tracking PBP date from the 1996-97 season - so this is earliest possible season
 def fetch_games(player_id, season, season_type):
     response = playergamelog.PlayerGameLog(
@@ -52,6 +35,7 @@ def fetch_games(player_id, season, season_type):
     rows = zip(game_dates, matchups)
     headers = [game_logs['headers'][3], game_logs['headers'][4]]
 
+    #Populate this df with FGM/FGA, FTM/FTA and PTS columns - *BUG* PTS can be 0 when player has played but not scored (program will not reset in this case)
     games_df = pd.DataFrame(rows, columns=headers)
 
     return games_df
