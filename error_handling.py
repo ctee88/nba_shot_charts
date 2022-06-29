@@ -16,8 +16,6 @@ def check_player_name():
             print("Invalid player name (see e.g)")
             continue
 
-# print(check_player_name())
-
 #Validates season is correct
 def check_season():
     while True:
@@ -29,8 +27,6 @@ def check_season():
 
         return season
 
-# print(check_season())
-
 #Validates season type is correct
 def check_season_type():
     while True:
@@ -40,8 +36,6 @@ def check_season_type():
             continue
             
         return season_type
-
-# print(check_season_type())
 
 #Validates that the player was present in Regular Season or Playoffs for specific season
 #Prompts user again for player_id, season and season_type again if not.
@@ -63,31 +57,22 @@ def check_games(player_id, season, season_type):
         print(games_df)
         return player_id, season, season_type
 
-# check_games(player_id, season_type, season)
-
 #Validates that the game_date is correct
 def check_game_date(player_id, season, season_type):
     while True:
         game_date = input("Enter a date in the form YYYYMMDD (e.g: 3rd May 2022 -> 20220503): ")
-        # print(f'PLAYER ID: {player_id}')
-        # print(f'SEASON: {season}')
-        # print(f'SEASON TYPE: {season_type}')
 
         shots_dfs = scf.fetch_shots(player_id, season, season_type, game_date)
 
-        #Returns empty df if game_date is invalid
+        #Returns empty df if game_date is invalid 
+        #CAN ALSO BE EMPTY IF THE PLAYER PLAYED GARBAGE MINUTES AND DIDN'T SCORE ANY POINTS
         if shots_dfs[0].empty == True:
             print("Invalid date, please ensure it is in the form of YYYYMMDD (see e.g)\n")
             continue
     
-        # scf.plot_shot_chart(shots_dfs[0], shots_dfs[1], season_type)
-        # break
         return shots_dfs
-        
-    #Else return shots_dfs, call plot_shot_chart in main?
 
-# check_game_date(player_id, season, season_type)
-
+#Repeat loop to initialise another plot if desired        
 def check_repeat():
     while True:
         repeat = input("\nWould you like to plot another shot chart? (Y/N): ").upper()
@@ -100,16 +85,3 @@ def check_repeat():
             break
         else:
             print("\nPlease provide your answer with either Y or N")
-
-while True:
-    player_id = check_player_name()
-    season = check_season()
-    season_type = check_season_type()
-    
-    player_id, season, season_type = check_games(player_id, season, season_type)
-    
-    shots_dfs = check_game_date(player_id, season, season_type)
-
-    scf.plot_shot_chart(shots_dfs[0], shots_dfs[1], season_type)
-
-    check_repeat()

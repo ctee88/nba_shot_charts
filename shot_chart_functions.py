@@ -1,39 +1,23 @@
-from matplotlib.patches import Circle, Rectangle, Arc
-from nba_api.stats.endpoints import commonallplayers
+from nba_api.stats.static import players
 from nba_api.stats.endpoints import shotchartdetail
 from nba_api.stats.endpoints import playergamelog
-import matplotlib.pyplot as plt
+import datetime
+import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
 import json
 
 season_types = ('Playoffs', 'Regular Season')
 
 #Fetch player ID from player full name
 def fetch_player_id(player_name):
-    response = commonallplayers.CommonAllPlayers()
-    data = json.loads(response.get_json())
+    players_dict = players.get_players()
+    player_data = [player for player in players_dict if player['full_name'].lower() == player_name.lower()][0]
 
-    #Define rows and columns before (readability)
-    players = data['resultSets'][0]
-
-    players_df = pd.DataFrame(players['rowSet'], columns=players['headers'])
-
-    # player_df = players_df[players_df.DISPLAY_FIRST_LAST==player_name]
-    # return player_df['PERSON_ID'].values[0]
-
-    # player_id = players_df[players_df['DISPLAY_FIRST_LAST']==player_name]
-    # return player_id['PERSON_ID'].values[0]
-
-    player_series = players_df.loc[players_df['DISPLAY_FIRST_LAST']==player_name, 'PERSON_ID']
-
-    return player_series.iloc[0]
-
-# print(fetch_player_id('James Harden'))
-# print(type(fetch_player_id('James Harden')))
+    return player_data['id']
 
 #Return df for all games (PO/RS) for specific season
-#Date format is in MMDDYYYY - Might not need ot return games_df
-#Could just print the df to user and fiddle around with date conversion
+#Date format is in MMDDYYYY - Might not need to return games_df
 #NBA only started tracking PBP date from the 1996-97 season - so this is earliest possible season
 def fetch_games(player_id, season, season_type):
     response = playergamelog.PlayerGameLog(
@@ -51,13 +35,33 @@ def fetch_games(player_id, season, season_type):
     rows = zip(game_dates, matchups)
     headers = [game_logs['headers'][3], game_logs['headers'][4]]
 
+    #Populate this df with FGM/FGA, FTM/FTA and PTS columns - *BUG* PTS can be 0 when player has played but not scored (program will not reset in this case)
     games_df = pd.DataFrame(rows, columns=headers)
 
     return games_df
 
-    #SHOW ALL GAMES IN DF IN CONSOLE (there is a command for this) i.e for RS show all games (shortens df currently)
+    #TODO: SHOW ALL GAMES IN DF IN CONSOLE (there is a command for this) i.e for RS show all games (shortens df currently)
+    #TODO: SHOW points for each game?
+    #Maybe get FGM/FGA from here?
 
-# show_games(201935, '2021-22', 'Regular Season')
+#Join game times with 1 zero padded to the left i.e: 7 MINUTES 1 SECOND = '07:01'
+def join_game_times(df):
+    game_times = {}
+    game_times['TIME_REMAINING'] = []
+
+    for row in range(0, len(df)):
+        mins_and_secs = [df['MINUTES_REMAINING'], df['SECONDS_REMAINING']]
+        #Declare mins and secs variables for readability, then format them by padding with one 0 to the left
+        mins = mins_and_secs[0].values[row]
+        secs = mins_and_secs[1].values[row]
+
+        game_time = f'{mins:02}:{secs:02}'
+        game_times['TIME_REMAINING'].append(game_time)
+
+    #Add new column with correctly formatted time to df
+    df = df.assign(TIME_REMAINING=game_times['TIME_REMAINING'])
+
+    return df
 
 #Return made and missed dfs for specific game
 def fetch_shots(player_id, season, season_type, game_date):
@@ -76,108 +80,234 @@ def fetch_shots(player_id, season, season_type, game_date):
     
     shots_df = pd.DataFrame(rows, columns=headers)
     game_shots_df = shots_df.loc[shots_df['GAME_DATE']==game_date]
+
+    #Format game time correctly
+    game_shots_df = join_game_times(game_shots_df)
+
     made_shots_df = game_shots_df.loc[game_shots_df['SHOT_MADE_FLAG']==1]
     missed_shots_df = game_shots_df.loc[game_shots_df['SHOT_MADE_FLAG']==0]
 
     return made_shots_df, missed_shots_df
 
-# print(fetch_shots(201935, '2021-22', 'Playoffs', '20220416'))
-# print(fetch_shots(893, '1985-86', 'Playoffs', '19860420'))
-# print(fetch_shots(201935, '2021-22', 'Playoffs', '     '))
+# From: https://towardsdatascience.com/interactive-basketball-data-visualizations-with-plotly-8c6916aaa59e
+def draw_plotly_court(fig, fig_width=900, margins=10):
+        
+    # From: https://community.plot.ly/t/arc-shape-with-path/7205/5
+    def ellipse_arc(x_center=0.0, y_center=0.0, a=10.5, b=10.5, start_angle=0.0, end_angle=2 * np.pi, N=200, closed=False):
+        t = np.linspace(start_angle, end_angle, N)
+        x = x_center + a * np.cos(t)
+        y = y_center + b * np.sin(t)
+        path = f'M {x[0]}, {y[0]}'
+        for k in range(1, len(t)):
+            path += f'L{x[k]}, {y[k]}'
+        if closed:
+            path += ' Z'
+        return path
 
-def draw_court(ax=None, color='black', lw=2):
-    # If an axes object isn't provided to plot onto, just get current one
-    if ax is None:
-        ax = plt.gca()
+    fig_height = fig_width * (470 + 2 * margins) / (500 + 2 * margins)
+    fig.update_layout(width=fig_width, height=fig_height)
 
-    # Create the various parts of an NBA basketball court
+    fig.update_xaxes(range=[-250, 250])
+    fig.update_yaxes(range=[422.5, -47.5])
 
-    # Create the basketball hoop
-    # Diameter of a hoop is 18" so it has a radius of 9", which is a value
-    # 7.5 in our coordinate system
-    hoop = Circle((0, 0), radius=7.5, linewidth=lw, color=color, fill=False)
+    threept_break_y = 89.47765084
+    three_line_col = "#777777"
+    main_line_col = "#777777"
 
-    # Create backboard
-    backboard = Rectangle((-30, -7.5), 60, -1, linewidth=lw, color=color)
+    fig.update_layout(
+        # Line Horizontal
+        margin=dict(l=20, r=20, t=20, b=20),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        yaxis=dict(
+            scaleanchor="x",
+            scaleratio=1,
+            showgrid=False,
+            zeroline=False,
+            showline=False,
+            ticks='',
+            showticklabels=False,
+            fixedrange=True,
+        ),
+        xaxis=dict(
+            showgrid=False,
+            zeroline=False,
+            showline=False,
+            ticks='',
+            showticklabels=False,
+            fixedrange=True,
+        ),
+        shapes=[
+            dict(
+                type="rect", x0=-250, y0=-52.5, x1=250, y1=417.5,
+                line=dict(color=main_line_col, width=1),
+                layer='below'
+            ),
+            dict(
+                type="rect", x0=-80, y0=-52.5, x1=80, y1=137.5,
+                line=dict(color=main_line_col, width=1),
+                layer='below'
+            ),
+            dict(
+                type="rect", x0=-60, y0=-52.5, x1=60, y1=137.5,
+                line=dict(color=main_line_col, width=1),
+                layer='below'
+            ),
+            dict(
+                type="circle", x0=-60, y0=77.5, x1=60, y1=197.5, xref="x", yref="y",
+                line=dict(color=main_line_col, width=1),
+                layer='below'
+            ),
+            dict(
+                type="line", x0=-60, y0=137.5, x1=60, y1=137.5,
+                line=dict(color=main_line_col, width=1),
+                layer='below'
+            ),
 
-    # The paint
-    # Create the outer box 0f the paint, width=16ft, height=19ft
-    outer_box = Rectangle((-80, -47.5), 160, 190, linewidth=lw, color=color,
-                          fill=False)
-    # Create the inner box of the paint, width=12ft, height=19ft
-    inner_box = Rectangle((-60, -47.5), 120, 190, linewidth=lw, color=color,
-                          fill=False)
+            dict(
+                type="rect", x0=-2, y0=-7.25, x1=2, y1=-12.5,
+                line=dict(color="#ec7607", width=1),
+                fillcolor='#ec7607',
+            ),
+            dict(
+                type="circle", x0=-7.5, y0=-7.5, x1=7.5, y1=7.5, xref="x", yref="y",
+                line=dict(color="#ec7607", width=1),
+            ),
+            dict(
+                type="line", x0=-30, y0=-12.5, x1=30, y1=-12.5,
+                line=dict(color="#ec7607", width=1),
+            ),
 
-    # Create free throw top arc
-    top_free_throw = Arc((0, 142.5), 120, 120, theta1=0, theta2=180,
-                         linewidth=lw, color=color, fill=False)
-    # Create free throw bottom arc
-    bottom_free_throw = Arc((0, 142.5), 120, 120, theta1=180, theta2=0,
-                            linewidth=lw, color=color, linestyle='dashed')
-    # Restricted Zone, it is an arc with 4ft radius from center of the hoop
-    restricted = Arc((0, 0), 80, 80, theta1=0, theta2=180, linewidth=lw,
-                     color=color)
+            dict(type="path",
+                 path=ellipse_arc(a=40, b=40, start_angle=0, end_angle=np.pi),
+                 line=dict(color=main_line_col, width=1), layer='below'),
+            dict(type="path",
+                 path=ellipse_arc(a=237.5, b=237.5, start_angle=0.386283101, end_angle=np.pi - 0.386283101),
+                 line=dict(color=main_line_col, width=1), layer='below'),
+            dict(
+                type="line", x0=-220, y0=-52.5, x1=-220, y1=threept_break_y,
+                line=dict(color=three_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=-220, y0=-52.5, x1=-220, y1=threept_break_y,
+                line=dict(color=three_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=220, y0=-52.5, x1=220, y1=threept_break_y,
+                line=dict(color=three_line_col, width=1), layer='below'
+            ),
 
-    # Three point line
-    # Create the side 3pt lines, they are 14ft long before they begin to arc
-    corner_three_a = Rectangle((-220, -47.5), 0, 140, linewidth=lw,
-                               color=color)
-    corner_three_b = Rectangle((220, -47.5), 0, 140, linewidth=lw, color=color)
-    # 3pt arc - center of arc will be the hoop, arc is 23'9" away from hoop
-    # I just played around with the theta values until they lined up with the 
-    # threes
-    three_arc = Arc((0, 0), 475, 475, theta1=22, theta2=158, linewidth=lw,
-                    color=color)
+            dict(
+                type="line", x0=-250, y0=227.5, x1=-220, y1=227.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=250, y0=227.5, x1=220, y1=227.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=-90, y0=17.5, x1=-80, y1=17.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=-90, y0=27.5, x1=-80, y1=27.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=-90, y0=57.5, x1=-80, y1=57.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=-90, y0=87.5, x1=-80, y1=87.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=90, y0=17.5, x1=80, y1=17.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=90, y0=27.5, x1=80, y1=27.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=90, y0=57.5, x1=80, y1=57.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
+            dict(
+                type="line", x0=90, y0=87.5, x1=80, y1=87.5,
+                line=dict(color=main_line_col, width=1), layer='below'
+            ),
 
-    # Center Court
-    center_outer_arc = Arc((0, 422.5), 120, 120, theta1=180, theta2=0,
-                           linewidth=lw, color=color)
-    center_inner_arc = Arc((0, 422.5), 40, 40, theta1=180, theta2=0,
-                           linewidth=lw, color=color)
+            dict(type="path",
+                 path=ellipse_arc(y_center=417.5, a=60, b=60, start_angle=-0, end_angle=-np.pi),
+                 line=dict(color=main_line_col, width=1), layer='below'),
 
-    # Outer lines (Baseline, Halfcourt and Sidelines)
-    outer_lines = Rectangle((-250, -47.5), 500, 470, linewidth=lw,
-                            color=color, fill=False)
-
-    # List of the court elements to be plotted onto the axes
-    court_elements = [hoop, backboard, outer_box, inner_box, top_free_throw,
-                      bottom_free_throw, restricted, corner_three_a,
-                      corner_three_b, three_arc, center_outer_arc,
-                      center_inner_arc, outer_lines]
-
-    # Add the court elements onto the axes
-    for element in court_elements:
-        ax.add_patch(element)
-
-    return ax
-
-made_shots_df = pd.read_excel("C:/Users/camer/OneDrive/Desktop/git_ver/shot_chart/made_shots.xlsx")
-missed_shots_df = pd.read_excel("C:/Users/camer/OneDrive/Desktop/git_ver/shot_chart/missed_shots.xlsx")
+        ]
+    )
+    return True
 
 def plot_shot_chart(made_df, missed_df, season_type):
-    plt.figure(figsize=(12, 11))
-    plt.scatter(made_df.LOC_X, made_df.LOC_Y, c='b')
-    plt.scatter(missed_df.LOC_X, missed_df.LOC_Y, c='r', marker='x')
-    #Format date GAME_DATE??
-    #Title text values
+    fig = go.Figure()
+    draw_plotly_court(fig)
+
+    #Data used for hovertext
+    custom_columns = ['PERIOD', 'TIME_REMAINING', 'ACTION_TYPE', 'SHOT_DISTANCE']
+    #Add made trace for made and missed shots
+    fig.add_trace(go.Scatter(
+        x=made_df['LOC_X'], 
+        y=made_df['LOC_Y'], 
+        mode='markers', 
+        name='MADE',
+        customdata=made_df[custom_columns],
+        marker=dict(
+            size=10,
+            color='green',
+            symbol='circle-open'
+            ),
+        hovertemplate='<br>'.join([
+            '<b>QUARTER %{customdata[0]}</b>',
+            'Game Time: %{customdata[1]}',
+            'Shot Description: %{customdata[2]}',
+            'Distance: %{customdata[3]}ft'
+        ])
+        )
+    )
+
+    fig.add_trace(go.Scatter(
+        x=missed_df['LOC_X'],
+        y=missed_df['LOC_Y'], 
+        mode='markers', 
+        name='MISSED',
+        customdata=missed_df[custom_columns],
+        marker=dict(
+            size=10,
+            color='red',
+            symbol='x-open'
+            ),
+        hovertemplate='<br>'.join([
+            '<b>QUARTER %{customdata[0]}</b>',
+            'Game Time: %{customdata[1]}',
+            'Shot Description: %{customdata[2]}',
+            'Distance: %{customdata[3]}ft'
+        ])
+        )
+    )
+
     player_name = made_df['PLAYER_NAME'].values[0]
     home_team = made_df['HTM'].values[0]
     away_team = made_df['VTM'].values[0]
     game_date = made_df['GAME_DATE'].values[0]
 
-    plt.title(label=f'''
-        {player_name} FGA\n
-        {home_team} vs {away_team} on {game_date}\n
-        @{home_team}\n
-        {season_type}
-        ''',
-        fontsize=10
+    #format game date
+    new_game_date = datetime.datetime.strptime(str(game_date), "%Y%m%d").strftime("%d/%m/%Y")
+
+    fig.update_layout(
+        title_text=f'''
+            {player_name} FGA | {home_team} vs {away_team} | {new_game_date} | @{home_team} | {season_type}
+            ''',
+        title_x=0.5,
+        title_y=0.97
     )
 
-    draw_court()
-    plt.xlim(-250, 250)
-    plt.ylim(422.5, -47.5)
+    fig.show(config=dict(displayModeBar=False))
 
-    plt.show()
-
-# plot_shot_chart(made_shots_df, missed_shots_df, 'Playoffs')
