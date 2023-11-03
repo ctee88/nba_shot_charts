@@ -7,7 +7,7 @@ def check_player_name():
     while True:
 
         print("e.g: LeBron James, Kentavious Caldwell-Pope, Jaren Jackson Jr., Stephen Curry")
-        player = input("Enter a player's full name (CASE SENSITIVE): ")
+        player = input("Enter a player's full name: ")
 
         try:
             player_id = scf.fetch_player_id(player)
