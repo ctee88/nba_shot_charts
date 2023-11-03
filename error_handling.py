@@ -22,7 +22,7 @@ def check_season():
         season = input("Enter a season in the form YYYY-YY (e.g: 2021-22): ")
         if season not in seasons:
             print("Please check date format (see e.g)")
-            print("Earliest season available is 1996-97, latest is 2022-23.")
+            print("Earliest season available is 1996-97, latest is 2023-24.")
             continue
 
         return season
